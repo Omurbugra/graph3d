@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Interaction</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #infoPanel {
+            position: absolute;
+            padding: 10px;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #ccc;
+            font-family: Arial, sans-serif;
+            pointer-events: none;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div id="infoPanel"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+    // ✅ Scene Setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xaaaaaa);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.8;
+    document.body.appendChild(renderer.domElement);
+
+    // ✅ Controls
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    camera.position.set(1.4, 0.4, 0);
+    camera.lookAt(0, -0.1, 0);
+    controls.target.set(0, -0.1, 0);
+    controls.update();
+
+    // ✅ Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 1));
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(10, 15, 10);
+    scene.add(directionalLight);
+
+    // ✅ Raycaster & Mouse
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const infoPanel = document.getElementById('infoPanel');
+
+    let hoveredObject = null;
+
+    // ✅ Models to Load
+    const models = [
+        { file: 'roof.glb', name: 'Roof' },
+        { file: 'wall.glb', name: 'Wall' },
+        { file: 'door.glb', name: 'Door' },
+        { file: 'window.glb', name: 'Window' },
+        { file: 'ground.glb', name: 'Ground' },
+        { file: 'other.glb', name: 'Other' } // ❌ This will NOT be raycasted
+    ];
+
+    // ✅ Model Information Mapping
+    const modelInfo = {
+        "Wall": `
+                <p>uValue: 0.123</p>
+                <p>Transmittance: 0.123</p>
+                <p>Thickness: 0.123</p>
+            `,
+        "Roof": `
+                <p>Material: Concrete</p>
+                <p>Thermal Resistance: 0.456</p>
+                <p>Waterproof: Yes</p>
+            `,
+        "Door": `
+                <p>Material: Wood</p>
+                <p>Height: 2.1m</p>
+                <p>Width: 0.9m</p>
+            `,
+        "Window": `
+                <p>Glass Type: Double Glazed</p>
+                <p>U-Factor: 1.2</p>
+                <p>Solar Heat Gain: 0.45</p>
+            `,
+        "Ground": `
+                <p>Foundation: Concrete</p>
+                <p>Insulation Depth: 30cm</p>
+                <p>Load Capacity: 500kg/m²</p>
+            `
+    };
+
+    // ✅ Load Models
+    const loader = new THREE.GLTFLoader();
+    models.forEach(model => {
+        loader.load(model.file, function(gltf) {
+            const modelScene = gltf.scene;
+            modelScene.traverse(function(child) {
+                if (child.isMesh) {
+                    child.name = model.name;
+                    child.isRaycastable = model.name !== "Other"; // ❌ Prevent raycasting on "Other"
+
+                    // Material Settings
+                    child.material.metalness = 0.3;
+                    child.material.roughness = 0.5;
+                }
+            });
+            scene.add(modelScene);
+        }, undefined, function(error) {
+            console.error(`Error loading model: ${model.file}`, error);
+        });
+    });
+
+    // ✅ Mouse Move (Hover Effect)
+    function onMouseMove(event) {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        const intersects = raycaster.intersectObjects(scene.children, true);
+        const validIntersect = intersects.find(intersect => intersect.object.isRaycastable !== false);
+
+        if (validIntersect) {
+            const selectedObject = validIntersect.object;
+
+            if (hoveredObject !== selectedObject) {
+                if (hoveredObject) resetHoverEffect(hoveredObject);
+                hoveredObject = selectedObject;
+                applyHoverEffect(hoveredObject);
+            }
+        } else {
+            if (hoveredObject) resetHoverEffect(hoveredObject);
+            hoveredObject = null;
+        }
+    }
+
+    function applyHoverEffect(object) {
+        if (object.material && object.material.emissive) {
+            object.userData.originalEmissive = object.material.emissive.clone(); // Save original color
+            object.userData.originalIntensity = object.material.emissiveIntensity; // Save original intensity
+
+            object.material.emissive.set(0xffcc00); // Bright yellow highlight
+            object.material.emissiveIntensity = 0.5;
+        }
+    }
+
+    function resetHoverEffect(object) {
+        if (object.material && object.material.emissive) {
+            object.material.emissive.copy(object.userData.originalEmissive || new THREE.Color(0x000000));
+            object.material.emissiveIntensity = object.userData.originalIntensity || 0;
+        }
+    }
+
+
+
+
+
+
+
+    window.addEventListener('mousemove', onMouseMove);
+
+    // ✅ Click Event (Show Info Panel)
+    renderer.domElement.addEventListener('click', (event) => {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        const intersects = raycaster.intersectObjects(scene.children, true);
+        const validIntersect = intersects.find(intersect => intersect.object.isRaycastable !== false);
+
+        if (validIntersect) {
+            const selectedObject = validIntersect.object;
+            let infoText = `<h2>${selectedObject.name}</h2>`;
+
+            if (modelInfo[selectedObject.name]) {
+                infoText += modelInfo[selectedObject.name];
+            } else {
+                infoText += `<p>No additional information available.</p>`;
+            }
+
+            infoPanel.style.left = `${event.clientX + 5}px`;
+            infoPanel.style.top = `${event.clientY + 5}px`;
+            infoPanel.innerHTML = infoText;
+            infoPanel.style.display = 'block';
+        } else {
+            infoPanel.style.display = 'none';
+        }
+    });
+
+    // ✅ Animation Loop
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    // ✅ Handle Window Resize
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+</script>
+</body>
+</html>
